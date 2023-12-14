@@ -156,8 +156,6 @@ def semigroup(s):
         print('===', counter, flush = True)
         if solver.solve():
             model = solver.get_model()
-            #debug_model(ids, model, s)
-            #break
             cl = out(ids, model, s)
             # find a new model
             solver.add_clause(cl)
