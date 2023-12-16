@@ -2,14 +2,24 @@ from pysat.solvers import Solver
 from pysat.formula import IDPool
 from itertools import product
 from itertools import permutations
+import sys
 
 def var(ids, func, args, d):
     return ids.id(f"x_{func}[{args}]={d}")
 
-# relaxation variable for strict inequalities in minimal model constraints
-def relax(ids, pi, cell):
+# relaxation variable for "following cells are less or equal"
+def relax(ids, pi, i):
+    return ids.id(f"r_{pi}_{i}")
+
+# relaxation variable for "cell is less than another cell"
+def less(ids, pi, cell):
     args = ','.join(str(arg) for arg in cell)
-    return ids.id(f"r_{pi}_[{args}]")
+    return ids.id(f"l_{pi}_[{args}]")
+
+# relaxation variable for "cells are equal"
+def equal(ids, pi, cell):
+    args = ','.join(str(arg) for arg in cell)
+    return ids.id(f"e_{pi}_[{args}]")
 
 # returns propositional variable for f(x_1, ..., x_n) = d for arbitrary function symbol f of arbitrary arity > 0
 # ['-f', ['x_1', ..., 'x_n'], 'd'] means f(x_1, ..., x_n) != d -> return negated variable
@@ -80,20 +90,55 @@ def encode(ids, s):
 def larger_set(pi, d, s):
     return {d2 for d2 in range(s) if pi[d2] > d}
 
-# substitute "one cell is strictly smaller than other" constraint with relaxation variable
-def substitue(ids, pi, cell, s):
+# substitute "cell is less than another cell"
+def sub_l(ids, pi, cell, s):
     clauses = []
-    r = -relax(ids, pi, cell)
-    clauses += [[r, func(ids, ['-f', cell, d])] + [func(ids, ['f', [pi.index(arg) for arg in cell], d2]) for d2 in larger_set(pi, d, s)] for d in range(s)]
+    l = -less(ids, pi, cell)
+    clauses += [[l, func(ids, ['-f', cell, d])] + [func(ids, ['f', [pi.index(arg) for arg in cell], d2]) for d2 in larger_set(pi, d, s)] for d in range(s)]
 
     return clauses
 
-def less_or_equal(ids, pi, visited, args, s):
-    rng = range(s)
+# substitute "cells are equal"
+def sub_e(ids, pi, cell, s):
     clauses = []
-    r = [relax(ids, pi, cell) for cell in visited]
-    clauses += [r + [func(ids, ['-f', args, d]), func(ids, ['f', [pi.index(arg) for arg in args], pi.index(d)])] for d in rng]
-    clauses += [r + [func(ids, ['f', args, d]), func(ids, ['-f', [pi.index(arg) for arg in args], pi.index(d)])] for d in rng]
+    e = -equal(ids, pi, cell)
+    clauses += [[e, func(ids, ['-f', cell, d]), func(ids, ['f', [pi.index(arg) for arg in cell], pi.index(d)])] for d in range(s)]
+    clauses += [[e, func(ids, ['f', cell, d]), func(ids, ['-f', [pi.index(arg) for arg in cell], pi.index(d)])] for d in range(s)]
+
+    return clauses
+
+def minimal(ids, s, nonabelian):
+    clauses = []
+    rng = range(s)
+
+    if nonabelian:
+        clauses += not_abelian(ids, s)
+
+    for pi in permutations(rng):
+        # skip identity permutation
+        if (pi == tuple([i for i in rng])):
+            continue
+
+        for cell in product(rng, repeat=2):
+            clauses += sub_l(ids, pi, cell, s)
+            clauses += sub_e(ids, pi, cell, s)
+
+        clauses += [[less(ids, pi, [0, 0]), equal(ids, pi, [0, 0])], [less(ids, pi, [0, 0]), relax(ids, pi, 0)]]
+
+        i = -1
+        for cell in product(rng, repeat=2):
+            i += 1
+            if cell == (0, 0) or cell == (s-1, s-1):
+                continue
+
+            r = -relax(ids, pi, i-1)
+            l = less(ids, pi, cell)
+            e = equal(ids, pi, cell)
+            clauses += [[r, l, e], [r, l, relax(ids, pi, i)]]
+
+        # relax variable from second last cell
+        clauses += [[-relax(ids, pi, s**2 - 2), less(ids, pi, [s-1, s-1]), equal(ids, pi, [s-1, s-1])]]
+
     return clauses
 
 def not_abelian(ids, s):
@@ -111,41 +156,16 @@ def not_abelian(ids, s):
 
     return clauses
 
-def minimal(ids, s, nonabelian):
-    clauses = []
-    rng = range(s)
-
-    if nonabelian:
-        clauses += not_abelian(ids, s)
-
-    for pi in permutations(rng):
-        # skip identity permutation
-        if (pi == tuple([i for i in rng])):
-            continue
-
-        for args in product(rng, repeat = 2):
-            clauses += substitue(ids, pi, [arg for arg in args], s)
-
-        # traverse cells by layers
-        visited = []
-        for layer in rng:
-            for i in range(layer):
-                visited.append([i, layer])
-                clauses += less_or_equal(ids, pi, visited, [i, layer], s)
-
-                visited.append([layer, i])
-                clauses += less_or_equal(ids, pi, visited, [layer, i], s)
-            visited.append([layer, layer])
-            clauses += less_or_equal(ids, pi, visited, [layer, layer], s)
-
-    return clauses
-
-def semigroup(s):
+def semigroup():
     ids = IDPool()
+
+    s = int(sys.argv[1])
+    nonabelian = int(sys.argv[2])
+
     clauses = []
     clauses += encode(ids, s)
 
-    m = minimal(ids, s, False)
+    m = minimal(ids, s, nonabelian)
     #print_cnf(ids, m)
     clauses += m
 
@@ -164,4 +184,4 @@ def semigroup(s):
             break
     return
 
-semigroup(6)
+semigroup()
