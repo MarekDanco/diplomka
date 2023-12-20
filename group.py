@@ -156,14 +156,33 @@ def sub_e(ids, pi, cell, s):
 
     return clauses
 
-def minimal(ids, s, nonabelian):
+# all transpositions on range(s)
+def transps(s):
+    tps = []
+    id = [i for i in range(s)]
+
+    for i in range(s):
+        for j in range(i+1, s):
+            tpn = id[:]
+            tpn[i], tpn[j] = tpn[j], tpn[i]
+            tps.append(tuple(tpn))
+    
+    return tps
+
+def minimal(ids, s, nonabelian, transpositions, concentric):
     clauses = []
     rng = range(s)
 
     if nonabelian:
         clauses += not_abelian(ids, s)
 
-    for pi in permutations(rng):
+    perms = transps(s) if transpositions else permutations(rng)
+
+    cells = [(x, y) for x in range(1, s-1) for y in range(1, s-1)]
+    if concentric:
+        cells.sort(key=lambda e: max(e[0],e[1]))
+
+    for pi in perms:
         # skip identity permutation and permutations s.t. pi[0] != 0
         if (pi == tuple([i for i in rng])) or (pi[0] != 0):
             continue
@@ -175,7 +194,7 @@ def minimal(ids, s, nonabelian):
         clauses += [[less(ids, pi, [1, 1]), equal(ids, pi, [1, 1])], [less(ids, pi, [1, 1]), relax(ids, pi, 0)]]
 
         i = -1
-        for cell in product(range(1, s-1), repeat=2):
+        for cell in cells:
             i += 1
             if cell == (1, 1) or cell == (s-2, s-2):
                 continue
@@ -194,12 +213,13 @@ def group():
 
     s = int(sys.argv[1])
     nonabelian = int(sys.argv[2])
+    transpositions = int(sys.argv[3])
+    concentric = int(sys.argv[4])
 
     clauses = []
     clauses += encode(ids, s)
 
-    m = minimal(ids, s, nonabelian)
-    #print_cnf(ids, m)
+    m = minimal(ids, s, nonabelian, transpositions, concentric)
     clauses += m
 
     solver = Solver(name = 'g3', bootstrap_with = clauses)
@@ -209,7 +229,6 @@ def group():
         print('===', counter, flush = True)
         if solver.solve():
             model = solver.get_model()
-
             cl = out(ids, model, s)
             # find a new model
             solver.add_clause(cl)
@@ -218,4 +237,5 @@ def group():
             break
     return
 
-group()
+if __name__ == "__main__":
+    group()
