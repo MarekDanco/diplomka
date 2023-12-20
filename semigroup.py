@@ -21,7 +21,8 @@ def equal(ids, pi, cell):
     args = ','.join(str(arg) for arg in cell)
     return ids.id(f"e_{pi}_[{args}]")
 
-# returns propositional variable for f(x_1, ..., x_n) = d for arbitrary function symbol f of arbitrary arity > 0
+# returns propositional variable for f(x_1, ..., x_n) = d 
+# for arbitrary function symbol f of arbitrary arity > 0
 # ['-f', ['x_1', ..., 'x_n'], 'd'] means f(x_1, ..., x_n) != d -> return negated variable
 def func(ids, lit):
     f = lit[0]
@@ -55,7 +56,7 @@ def out(ids, model, s):
             for d in rng:
                 if model[abs(func(ids, ['f', [x, y], d])) - 1] > 0:
                     cl.append(-func(ids, ['f', [x, y], d]))
-                    print(d, end =" ", flush = True) if s < 11 else print(f"{d:2}", end = " ", flush = True)
+                    print(d,end=" ",flush=True) if s<11 else print(f"{d:2}",end=" ",flush=True)
         print()
     return cl
 
@@ -94,7 +95,9 @@ def larger_set(pi, d, s):
 def sub_l(ids, pi, cell, s):
     clauses = []
     l = -less(ids, pi, cell)
-    clauses += [[l, func(ids, ['-f', cell, d])] + [func(ids, ['f', [pi.index(arg) for arg in cell], d2]) for d2 in larger_set(pi, d, s)] for d in range(s)]
+    clauses += [[l, func(ids, ['-f', cell, d])] + 
+                [func(ids, ['f', [pi.index(arg) for arg in cell], d2]) for d2 in larger_set(pi, d, s)] 
+                for d in range(s)]
 
     return clauses
 
@@ -107,14 +110,33 @@ def sub_e(ids, pi, cell, s):
 
     return clauses
 
-def minimal(ids, s, nonabelian):
+# all transpositions on range(s)
+def transps(s):
+    tps = []
+    id = [i for i in range(s)]
+
+    for i in range(s):
+        for j in range(i+1, s):
+            tpn = id[:]
+            tpn[i], tpn[j] = tpn[j], tpn[i]
+            tps.append(tuple(tpn))
+    
+    return tps
+
+def minimal(ids, s, nonabelian, transpositions, concentric):
     clauses = []
     rng = range(s)
 
     if nonabelian:
         clauses += not_abelian(ids, s)
 
-    for pi in permutations(rng):
+    perms = transps(s) if transpositions else permutations(rng)
+
+    cells = [(x, y) for x in rng for y in rng]
+    if concentric:
+        cells.sort(key=lambda e: max(e[0],e[1]))
+
+    for pi in perms:
         # skip identity permutation
         if (pi == tuple([i for i in rng])):
             continue
@@ -123,10 +145,11 @@ def minimal(ids, s, nonabelian):
             clauses += sub_l(ids, pi, cell, s)
             clauses += sub_e(ids, pi, cell, s)
 
+        # constraints for the first cell
         clauses += [[less(ids, pi, [0, 0]), equal(ids, pi, [0, 0])], [less(ids, pi, [0, 0]), relax(ids, pi, 0)]]
 
         i = -1
-        for cell in product(rng, repeat=2):
+        for cell in cells:
             i += 1
             if cell == (0, 0) or cell == (s-1, s-1):
                 continue
@@ -136,7 +159,7 @@ def minimal(ids, s, nonabelian):
             e = equal(ids, pi, cell)
             clauses += [[r, l, e], [r, l, relax(ids, pi, i)]]
 
-        # relax variable from second last cell
+        # constraints for the last cell, uses relax variable from the second last cell
         clauses += [[-relax(ids, pi, s**2 - 2), less(ids, pi, [s-1, s-1]), equal(ids, pi, [s-1, s-1])]]
 
     return clauses
@@ -161,12 +184,13 @@ def semigroup():
 
     s = int(sys.argv[1])
     nonabelian = int(sys.argv[2])
+    transpositions = int(sys.argv[3])
+    concentric = int(sys.argv[4])
 
     clauses = []
     clauses += encode(ids, s)
 
-    m = minimal(ids, s, nonabelian)
-    #print_cnf(ids, m)
+    m = minimal(ids, s, nonabelian, transpositions, concentric)
     clauses += m
 
     solver = Solver(name = 'g3', bootstrap_with = clauses)
@@ -176,7 +200,7 @@ def semigroup():
         print('===', counter, flush = True)
         if solver.solve():
             model = solver.get_model()
-            cl = out(ids, model, s)
+            cl = out(ids, model, s) 
             # find a new model
             solver.add_clause(cl)
         else:
@@ -184,4 +208,5 @@ def semigroup():
             break
     return
 
-semigroup()
+if __name__ == "__main__":
+    semigroup()
